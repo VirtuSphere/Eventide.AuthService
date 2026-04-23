@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  auth-db:
+    image: postgres:16-alpine
+    container_name: eventide-auth-db
+    environment:
+      POSTGRES_DB: eventide_auth
+      POSTGRES_USER: eventide
+      POSTGRES_PASSWORD: eventide_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+
+  auth-api:
+    build: .
+    container_name: eventide-auth-api
+    ports:
+      - "5001:8080"
+    environment:
+      - ConnectionStrings__AuthDb=Host=auth-db;Database=eventide_auth;Username=eventide;Password=eventide_pass
+      - ConnectionStrings__Redis=redis:6379
+      - Jwt__Key=SuperSecretKeyForEventide2024!MustBe256BitsLong!!
+      - Jwt__Issuer=Eventide.AuthService
+      - Jwt__Audience=Eventide
+    depends_on:
+      - auth-db
+
+volumes:
+  auth-db-data:
