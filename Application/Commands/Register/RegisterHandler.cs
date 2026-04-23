@@ -1,9 +1,11 @@
 using Eventide.AuthService.Application.Common;
 using Eventide.AuthService.Application.DTOs;
+using Eventide.AuthService.Contracts.Events;
 using Eventide.AuthService.Domain.Entities;
 using Eventide.AuthService.Domain.Enums;
 using Eventide.AuthService.Domain.Interfaces;
 using Eventide.AuthService.Domain.ValueObjects;
+using MassTransit;
 using MediatR;
 
 namespace Eventide.AuthService.Application.Commands.Register;
@@ -12,11 +14,13 @@ public class RegisterHandler : IRequestHandler<RegisterCommand, Result<AuthResul
 {
     private readonly IUserRepository _userRepository;
     private readonly ITokenService _tokenService;
+    private readonly IPublishEndpoint _publishEndpoint;
 
-    public RegisterHandler(IUserRepository userRepository, ITokenService tokenService)
+    public RegisterHandler(IUserRepository userRepository, ITokenService tokenService, IPublishEndpoint publishEndpoint)
     {
         _userRepository = userRepository;
         _tokenService = tokenService;
+        _publishEndpoint = publishEndpoint;
     }
 
     public async Task<Result<AuthResultDto>> Handle(RegisterCommand request, CancellationToken ct)
@@ -30,7 +34,6 @@ public class RegisterHandler : IRequestHandler<RegisterCommand, Result<AuthResul
             return Result<AuthResultDto>.Failure("This username is already taken");
 
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-
         var user = User.Create(request.Username, request.Email, passwordHash, UserRole.Player);
 
         var refreshToken = _tokenService.GenerateRefreshToken();
@@ -38,6 +41,15 @@ public class RegisterHandler : IRequestHandler<RegisterCommand, Result<AuthResul
 
         await _userRepository.AddAsync(user, ct);
         await _userRepository.SaveChangesAsync(ct);
+
+        // Публикуем событие
+        await _publishEndpoint.Publish(new UserRegisteredEvent
+        {
+            UserId = user.Id,
+            Username = user.Username,
+            Email = user.Email.Value,
+            CreatedAt = user.CreatedAt
+        }, ct);
 
         var accessToken = _tokenService.GenerateAccessToken(user);
 
